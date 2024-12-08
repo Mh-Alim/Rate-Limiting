@@ -1,8 +1,13 @@
 import express from "express";
 import { rateLimit } from "express-rate-limit";
+import dotenv from "dotenv";
+import cors from "cors";
+
+dotenv.config();
 
 const app = express();
 
+app.use(cors());
 app.use(express.json());
 
 const generateOtpLimiter = rateLimit({
@@ -38,12 +43,29 @@ app.post("/generate-otp", generateOtpLimiter, (req: any, res: any) => {
   });
 });
 
-app.post("/verify-otp", verifyOtpLimiter, (req: any, res: any) => {
-  const { email, otp, newPassword } = req.body;
-
+app.post("/verify-otp", verifyOtpLimiter, async (req: any, res: any) => {
+  const { email, otp, newPassword, token } = req.body;
+  console.log("comming here");
   if (!email || !otp || !newPassword)
     return res.status(400).json({ message: "fill all the fields" });
 
+
+  // this code is for captcha to prevent script to access this endpoint. ( to prevent ddos )
+  const formData = new FormData();
+  formData.append("secret", process.env.CLOUDFLARE_SECRET || "");
+  formData.append("response", token);
+
+  const url = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+  const result = await fetch(url, {
+    body: formData,
+    method: "POST",
+  });
+  const challengeSucceeded = (await result.json()).success;
+  console.log(challengeSucceeded);
+
+  if (!challengeSucceeded) {
+    return res.status(403).json({ message: "Invalid reCAPTCHA token" });
+  }
   if (store[email] === otp) {
     // verified otp
     console.log(`Password is updated to ${newPassword}`);
